@@ -1,0 +1,6 @@
+# Vercel'ga faqat panel yuklanadi (Root Directory = facecontrol/static)
+/*
+!/facecontrol
+/facecontrol/*
+!/facecontrol/static
+/facecontrol/static/.env*

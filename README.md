@@ -73,15 +73,15 @@ Cloudflare Tunnel orqali ulanadi. Ma'lumotlar (baza, rasmlar) kompyuterdan chiqm
 **1. Panelni Vercel'ga joylash** (bir marta):
 
 ```bash
-cd facecontrol/static
+# loyiha ildizidan (Vercel'da Root Directory = facecontrol/static; .vercelignore faqat panelni yuklaydi)
 npx vercel login          # bir marta
-npx vercel --prod         # loyiha nomini so'raydi, masalan: face-control
+npx vercel deploy --prod
 ```
 
 **2. Kompyuterda serverni tunnel bilan ishga tushirish:**
 
 ```bash
-python -m facecontrol serve --source 0 --tunnel --panel-url https://face-control.vercel.app
+python -m facecontrol serve --source 0 --tunnel --panel-url https://face-control-lime.vercel.app
 ```
 
 Terminalda tunnel manzili, kirish kaliti va tayyor **panel havolasi** chiqadi. Havolani oching — panel
@@ -90,7 +90,7 @@ manzil va kalitni eslab qoladi. Keyingi safar panelni oddiy ochib, "Server" tugm
 Xavfsizlik:
 - `--tunnel` bilan har ishga tushirishda yangi tasodifiy kalit yaratiladi; doimiy kalit uchun `--token` yoki `FC_TOKEN`.
 - Kalitsiz API, rasmlar va jonli oqim ochilmaydi (401). Havolani faqat ishonchli odamlarga bering.
-- Faqat o'z panelingizdan murojaatga ruxsat: `--allow-origin https://face-control.vercel.app`.
+- Faqat o'z panelingizdan murojaatga ruxsat: `--allow-origin https://face-control-lime.vercel.app`.
 - Bepul quick tunnel manzili har ishga tushirishda o'zgaradi. Doimiy manzil uchun Cloudflare akkauntida
   [named tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) yarating.
 - Kompyuter yoki server o'chsa, panel "Serverga ulanib bo'lmadi" deb ko'rsatadi.
