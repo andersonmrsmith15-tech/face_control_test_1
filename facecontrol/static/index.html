@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Face Control</title>
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
 <style>
 :root {
   --bg: #f6f7f9; --panel: #ffffff; --text: #16181d; --muted: #6b7280; --line: #e4e7ec;
@@ -90,6 +92,12 @@ th { color: var(--muted); font-weight: 500; }
 .pair { display: flex; align-items: center; gap: 14px; padding: 10px 0; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
 .pair img { width: 64px; height: 64px; border-radius: 8px; object-fit: cover; }
 .hidden { display: none !important; }
+.conn-btn { display: inline-flex; align-items: center; gap: 6px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); display: inline-block; }
+.dot.ok { background: var(--ok); } .dot.bad { background: var(--danger); }
+#conn { width: min(460px, calc(100vw - 32px)); }
+#conn form { padding: 20px; display: grid; gap: 12px; }
+#conn h2 { margin: 0; font-size: 16px; }
 </style>
 </head>
 <body>
@@ -101,6 +109,7 @@ th { color: var(--muted); font-weight: 500; }
     <button data-tab="people">Odamlar</button>
     <button data-tab="upload">Rasm / Ro'yxatga olish</button>
     <button data-tab="dupes">Dublikatlar</button>
+    <button id="btn-conn" class="conn-btn" title="Server ulanishi"><span class="dot" id="conn-dot"></span>Server</button>
   </nav>
 </header>
 
@@ -157,11 +166,42 @@ th { color: var(--muted); font-weight: 500; }
 </main>
 
 <dialog id="dlg"></dialog>
+<dialog id="conn">
+  <form method="dialog" id="conn-form">
+    <h2>Serverga ulanish</h2>
+    <p class="muted" style="margin:0">Kompyuteringizda <code>python -m facecontrol serve --source 0 --tunnel</code> ni ishga tushiring
+      va u chiqargan manzil hamda kalitni kiriting.</p>
+    <input id="conn-url" placeholder="https://....trycloudflare.com" required>
+    <input id="conn-token" placeholder="Kirish kaliti" type="password" autocomplete="off">
+    <div id="conn-msg" class="muted"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button type="button" class="btn" id="conn-forget">Unutish</button>
+      <button class="btn primary">Ulanish</button>
+    </div>
+  </form>
+</dialog>
 
 <script>
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-const img = p => p ? `/crops/${p}` : "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E";
+// --- ulanish sozlamalari: panel serverning o'zidan yoki Vercel'dan ochilgan bo'lishi mumkin
+const BOOT = window.FC_BOOT || {};
+const store = { get: k => { try { return localStorage.getItem(k); } catch { return null; } },
+                set: (k, v) => { try { v ? localStorage.setItem(k, v) : localStorage.removeItem(k); } catch {} } };
+const CONN = (() => {
+  const qs = new URLSearchParams(location.search);
+  if (qs.has("server") || qs.has("token")) {            // havoladan kelgan sozlamani eslab, URL'dan o'chiramiz
+    if (qs.get("server")) store.set("fc_server", qs.get("server"));
+    if (qs.get("token")) store.set("fc_token", qs.get("token"));
+    history.replaceState(null, "", location.pathname);
+  }
+  return {
+    base: BOOT.sameOrigin ? "" : (store.get("fc_server") || "").replace(/\/+$/, ""),
+    token: BOOT.token || store.get("fc_token") || "",
+  };
+})();
+const tq = () => CONN.token ? `?token=${encodeURIComponent(CONN.token)}` : "";
+const img = p => p ? `${CONN.base}/crops/${p}${tq()}` : "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E";
 const ago = ts => {
   if (!ts) return "-";
   const s = Date.now()/1000 - ts;
@@ -171,7 +211,27 @@ const ago = ts => {
   return new Date(ts*1000).toLocaleString();
 };
 const dt = ts => ts ? new Date(ts*1000).toLocaleString() : "-";
-const api = async (url, opt) => { const r = await fetch(url, opt); if (!r.ok) throw new Error((await r.json().catch(()=>({}))).detail || r.statusText); return r.json(); };
+const api = async (url, opt = {}) => {
+  if (!BOOT.sameOrigin && !CONN.base) { openConn(); throw new Error("Server ulanmagan"); }
+  let r;
+  try {
+    r = await fetch(CONN.base + url, {...opt, headers: {...(opt.headers || {}), ...(CONN.token ? {Authorization: "Bearer " + CONN.token} : {})}});
+  } catch (e) { setDot("bad"); throw new Error("Serverga ulanib bo'lmadi (kompyuter yoki tunnel o'chiq?)"); }
+  if (r.status === 401) { setDot("bad"); openConn("Kirish kaliti noto'g'ri."); throw new Error("Kirish kaliti noto'g'ri"); }
+  if (!r.ok) throw new Error((await r.json().catch(()=>({}))).detail || r.statusText);
+  setDot("ok");
+  return r.json();
+};
+const setDot = st => { $("#conn-dot").className = "dot " + st; };
+function openConn(msg) {
+  const d = $("#conn");
+  if (d.open) { if (msg) $("#conn-msg").textContent = msg; return; }
+  $("#conn-url").value = CONN.base || store.get("fc_server") || "";
+  $("#conn-token").value = CONN.token;
+  $("#conn-msg").textContent = msg || "";
+  $("#conn-url").closest("form").querySelector("#conn-url").disabled = !!BOOT.sameOrigin;
+  d.showModal();
+}
 const form = o => { const f = new FormData(); for (const k in o) f.append(k, o[k]); return f; };
 
 let tab = "live";
@@ -191,7 +251,7 @@ async function loadStats() {
     <span>Tana namunalari <b>${s.body_samples}</b></span>`;
   if (s.live) {
     $("#live-status").textContent = `● ${s.live.name} · ${s.live.status} · ${s.live.fps} FPS`;
-    if (!liveStarted) { $("#live-img").src = "/stream.mjpg"; liveStarted = true; }
+    if (!liveStarted) { $("#live-img").src = `${CONN.base}/stream.mjpg${tq()}`; liveStarted = true; }
   } else { $("#live-img").classList.add("hidden"); $("#no-live").classList.remove("hidden"); }
 }
 
@@ -213,12 +273,20 @@ async function loadPeople() {
     <div class="muted">${ago(p.last_seen)}</div>
     <span class="chip ${p.name ? "" : "unk"}">#${p.id}</span><span class="chip">${p.seen_count}× ko'rildi</span>
     ${p.gender ? `<span class="chip">${p.gender}${p.age ? ", ~" + Math.round(p.age) : ""}</span>` : ""}
-    ${p.attrs.height_cm ? `<span class="chip">~${Math.round(p.attrs.height_cm)} sm</span>` : ""}</div></div>`).join("")
+    ${p.attrs.height_cm ? `<span class="chip">~${Math.round(p.attrs.height_cm)} sm</span>` : ""}
+    ${Object.values(p.attrs.appearance || {}).filter(a => a.label !== "yo'q").map(a => `<span class="chip">${esc(a.label)}</span>`).join("")}</div></div>`).join("")
     || `<p class="muted">Bazada hali odam yo'q.</p>`;
 }
 
 async function openPerson(id) {
   const p = await api("/api/persons/" + id);
+  const APP_UZ = {glasses: "Ko'zoynak", beard: "Soqol", headwear: "Bosh kiyim"};
+  const appRows = Object.keys(APP_UZ).map(k => {
+    const cur = (p.attrs.appearance || {})[k], hist = (p.attrs.appearance_hist || {})[k] || {};
+    const tot = Object.values(hist).reduce((a, b) => a + b, 0);
+    const usual = tot ? Object.entries(hist).sort((a, b) => b[1] - a[1]).map(([l, n]) => `${esc(l)} ${Math.round(n / tot * 100)}%`).join(", ") : "";
+    return `<span>${APP_UZ[k]}</span><span>${cur ? `<b>${esc(cur.label)}</b>` : "-"}${usual ? ` <span class="muted">(odatda: ${usual})</span>` : ""}</span>`;
+  }).join("");
   const clothes = p.attrs.clothes ? `ustki: ${p.attrs.clothes.upper || "-"}, pastki: ${p.attrs.clothes.lower || "-"}` : "-";
   const d = $("#dlg");
   d.innerHTML = `<div class="dlg-head">
@@ -234,6 +302,7 @@ async function openPerson(id) {
         <span>Ko'rinishlar</span><span>${p.seen_count}</span>
         <span>Yosh / jins</span><span>${p.age ? "~" + Math.round(p.age) : "-"} / ${p.gender || "-"} ${p.gender_conf ? "(" + Math.round(p.gender_conf*100) + "%)" : ""}</span>
         <span>Bo'y (taxminiy)</span><span>${p.attrs.height_cm ? "~" + Math.round(p.attrs.height_cm) + " sm (" + p.attrs.height_n + " ta o'lchov)" : "- (to'liq gavda + yuz kerak)"}</span>
+        ${appRows}
         <span>Kiyim (oxirgi)</span><span>${esc(clothes)}</span>
       </div>
     </div>
@@ -310,6 +379,23 @@ document.addEventListener("keydown", e => {
 });
 document.addEventListener("fullscreenchange", () => $("#btn-fs").textContent = document.fullscreenElement ? "✕ Chiqish" : "⛶ To'liq ekran");
 document.querySelector("main").classList.add("live-mode");
+
+// --- server ulanishi oynasi
+$("#btn-conn").onclick = () => openConn();
+$("#conn-form").onsubmit = e => {
+  e.preventDefault();
+  if (!BOOT.sameOrigin) {
+    let u = $("#conn-url").value.trim().replace(/\/+$/, "");
+    if (u && !/^https?:\/\//.test(u)) u = "https://" + u;
+    CONN.base = u; store.set("fc_server", u);
+  }
+  CONN.token = $("#conn-token").value.trim(); store.set("fc_token", CONN.token);
+  liveStarted = false;
+  $("#live-img").classList.remove("hidden"); $("#no-live").classList.add("hidden");
+  $("#conn").close();
+  refresh();
+};
+$("#conn-forget").onclick = () => { store.set("fc_server", ""); store.set("fc_token", ""); location.reload(); };
 
 let qTimer; $("#q").oninput = () => { clearTimeout(qTimer); qTimer = setTimeout(loadPeople, 250); };
 $("#only-unk").onchange = loadPeople;

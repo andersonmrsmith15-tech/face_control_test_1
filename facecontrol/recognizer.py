@@ -12,6 +12,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from . import attributes as A
 from .config import Config
 from .db import Database
 from .gallery import Gallery
@@ -41,6 +42,9 @@ class TrackState:
     best_crop_q: float = 0.0
     best_score: float = 0.0
     last_height_ts: float = 0.0
+    appear: dict = field(default_factory=dict)
+    last_appear_ts: float = 0.0
+    last_appear_db_ts: float = 0.0
     height: float | None = None
     conf: float = 0.0                 # joriy aniqlik foizi (0..100), kadrlar bo'yicha silliqlangan
     cur_method: str = ""
@@ -64,6 +68,7 @@ class Result:
     is_new: bool = False
     confidence: float = 0.0           # aniqlik foizi 0..100
     height: float | None = None       # taxminiy bo'y, sm
+    appearance: list[str] = field(default_factory=list)   # masalan ["ko'zoynak", "kepka"]
 
 
 class Recognizer:
@@ -76,6 +81,13 @@ class Recognizer:
         if use_body:
             log.info("Tana modellari yuklanmoqda...")
             self.body = BodyEngine(self.cfg)
+        self.attrs = None
+        if self.cfg.detect_appearance:
+            log.info("Tashqi ko'rinish modeli (CLIP) yuklanmoqda...")
+            try:
+                self.attrs = A.AttributeEngine(self.cfg)
+            except Exception as e:  # pragma: no cover
+                log.warning("Ko'rinish modeli yuklanmadi (%s) — belgilar o'chirildi", e)
         self.gallery = Gallery(self.cfg, self.db)
         self.tracks: dict[str, TrackState] = {}
         self._face_only_seq = 0
@@ -433,6 +445,16 @@ class Recognizer:
                 st.last_height_ts = ts
                 st.height = self.db.add_height(P, cm)
                 self._heights[P] = st.height
+        # --- tashqi ko'rinish: ko'zoynak, soqol, bosh kiyim
+        if self.attrs is not None and face is not None and agree and face.quality >= 0.3 and \
+                abs(face.yaw) < 45 and ts - st.last_appear_ts >= cfg.appearance_interval_s:
+            probs = self.attrs.predict(img, face.bbox)
+            if probs:
+                st.appear = A.smooth(st.appear, probs)
+                st.last_appear_ts = ts
+                if ts - st.last_appear_db_ts >= 3.0:
+                    self.db.update_appearance(P, A.labels(st.appear, cfg.appearance_min_p), ts)
+                    st.last_appear_db_ts = ts
         st.face_path = face_path or st.face_path
         st.body_path = body_path or st.body_path
 
@@ -482,6 +504,8 @@ class Recognizer:
             name=self.name_of(st.person_id) if st.person_id is not None else "Aniqlanmoqda...",
             score=st.best_score,
             confidence=st.conf,
+            appearance=[n for n, _ in A.labels(st.appear, self.cfg.appearance_min_p).values() if n != A.NONE]
+            if st.person_id is not None else [],
             height=(self._heights.get(st.person_id) or st.height) if st.person_id is not None else None,
             method=st.cur_method or st.method,
             body_bbox=None if body is None else body.bbox,
@@ -614,9 +638,12 @@ def annotate(img: np.ndarray, results: list[Result]) -> np.ndarray:
     for anchor, name, sub, col, r in labels:
         nb = draw.textbbox((0, 0), name, font=fb)
         sb = draw.textbbox((0, 0), sub, font=fs)
+        app = "  ·  ".join(r.appearance)
+        ab = draw.textbbox((0, 0), app, font=fs) if app else (0, 0, 0, 0)
         pad = max(6, big // 5)
-        bw = max(nb[2], sb[2]) + 2 * pad
-        bh = (nb[3] - nb[1]) + (sb[3] - sb[1]) + 3 * pad
+        line_gap = pad // 2
+        bw = max(nb[2], sb[2], ab[2]) + 2 * pad
+        bh = (nb[3] - nb[1]) + (sb[3] - sb[1]) + 3 * pad + ((sb[3] - sb[1]) + line_gap if app else 0)
         x = int(min(max(0, anchor[0]), W - bw))
         # nomzod joylar: ramka tepasi, ramka osti, so'ng yuqoriga/pastga siljitib — boshqa yorliqni yopmasin
         above, below = int(anchor[1]) - bh - 4, int(anchor[3]) + 4
@@ -632,4 +659,6 @@ def annotate(img: np.ndarray, results: list[Result]) -> np.ndarray:
         sy = y + 2 * pad + (nb[3] - nb[1]) - sb[1]
         sub_col = (170, 175, 185) if r.person_id is None else _conf_color(r.confidence)
         draw.text((x + pad + 2, sy), sub, font=fs, fill=sub_col)
+        if app:
+            draw.text((x + pad + 2, sy + (sb[3] - sb[1]) + line_gap), app, font=fs, fill=(120, 190, 255))
     return cv2.cvtColor(np.asarray(pil), cv2.COLOR_RGB2BGR)

@@ -181,6 +181,25 @@ class Database:
             self.conn.commit()
             return a["height_cm"]
 
+    def update_appearance(self, pid: int, current: dict[str, tuple[str, float]], ts: float) -> None:
+        """Joriy ko'rinish (ko'zoynak/soqol/bosh kiyim) va uning tarixi (qaysi holat necha marta)."""
+        if not current:
+            return
+        with self._lock:
+            row = self.conn.execute("SELECT attrs FROM persons WHERE id=?", (pid,)).fetchone()
+            if not row:
+                return
+            a = json.loads(row[0] or "{}")
+            app = a.setdefault("appearance", {})
+            hist = a.setdefault("appearance_hist", {})
+            for attr, (label, p) in current.items():
+                app[attr] = {"label": label, "p": round(float(p), 3)}
+                h = hist.setdefault(attr, {})
+                h[label] = h.get(label, 0) + 1
+            a["appearance_ts"] = ts
+            self.conn.execute("UPDATE persons SET attrs=? WHERE id=?", (json.dumps(a), pid))
+            self.conn.commit()
+
     def record_observation(
         self,
         pid: int,

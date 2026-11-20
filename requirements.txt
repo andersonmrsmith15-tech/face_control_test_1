@@ -10,3 +10,4 @@ torchvision
 fastapi
 uvicorn[standard]
 python-multipart
+open_clip_torch

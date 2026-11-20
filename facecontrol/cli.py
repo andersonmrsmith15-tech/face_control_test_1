@@ -196,13 +196,71 @@ def cmd_export(a, cfg):
     print(f"{len(data)} odam -> {a.out}")
 
 
+def _start_tunnel(port: int, on_url) -> None:
+    """Cloudflare quick tunnel: ro'yxatdan o'tishsiz vaqtinchalik https://*.trycloudflare.com manzil."""
+    import atexit
+    import re
+    import shutil
+    import subprocess
+    import threading
+
+    exe = shutil.which("cloudflared")
+    if not exe:
+        sys.exit("cloudflared topilmadi. O'rnatish: brew install cloudflared")
+    import os
+    import shlex
+
+    # qo'riqchi: server jarayoni qanday to'xtamasin (Ctrl+C, kill, xato), tunnel ham yopiladi
+    cmd = f"{shlex.quote(exe)} tunnel --no-autoupdate --url http://127.0.0.1:{port}"
+    guard = (f"{cmd} 2>&1 & c=$!; trap 'kill $c 2>/dev/null' EXIT TERM INT; "
+             f"while kill -0 {os.getpid()} 2>/dev/null && kill -0 $c 2>/dev/null; do sleep 1; done")
+    proc = subprocess.Popen(["/bin/sh", "-c", guard], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    atexit.register(proc.terminate)
+
+    def read():
+        found = False
+        for line in proc.stdout:
+            m = re.search(r"https://[a-z0-9-]+\.trycloudflare\.com", line)
+            if m and not found:
+                found = True
+                on_url(m.group(0))
+        if not found:
+            print("Tunnel ishga tushmadi:", proc.returncode)
+
+    threading.Thread(target=read, daemon=True).start()
+
+
 def cmd_serve(a, cfg):
+    import os
+    import secrets
+    from urllib.parse import urlencode
+
     import uvicorn
 
     from .web import create_app
 
-    app = create_app(cfg, source=a.source, source_name=a.name)
-    uvicorn.run(app, host=a.host, port=a.port, log_level="info")
+    token = a.token or os.environ.get("FC_TOKEN")
+    if a.tunnel and not token:
+        token = secrets.token_urlsafe(24)
+    origins = a.allow_origin or ([o for o in os.environ.get("FC_ALLOW_ORIGINS", "").split(",") if o] or None)
+    panel = (a.panel_url or os.environ.get("FC_PANEL_URL", "")).rstrip("/")
+
+    if a.tunnel:
+        def on_url(url: str):
+            line = "=" * 72
+            print(f"\n{line}\n  Tunnel manzili : {url}\n  Kirish kaliti  : {token}")
+            if panel:
+                print(f"  Panel havolasi : {panel}/?{urlencode({'server': url, 'token': token})}")
+            else:
+                print("  Panelni oching va yuqoridagi manzil hamda kalitni kiriting.")
+            print(f"  (Havolani faqat ishonchli odamlarga bering: u kamera va bazaga to'liq kirish beradi)\n{line}\n",
+                  flush=True)
+        _start_tunnel(a.port, on_url)
+    elif token:
+        print(f"Kirish kaliti: {token}")
+
+    app = create_app(cfg, source=a.source, source_name=a.name, token=token, allow_origins=origins)
+    uvicorn.run(app, host=a.host, port=a.port, log_level="warning" if a.tunnel else "info")
 
 
 def main(argv=None):
@@ -271,6 +329,11 @@ def main(argv=None):
     s.add_argument("--name", default=None)
     s.add_argument("--host", default="127.0.0.1")
     s.add_argument("--port", type=int, default=8000)
+    s.add_argument("--tunnel", action="store_true", help="Cloudflare tunnel orqali internetga chiqarish (Vercel panel uchun)")
+    s.add_argument("--token", default=None, help="kirish kaliti (yoki FC_TOKEN). --tunnel bilan avtomatik yaratiladi")
+    s.add_argument("--panel-url", default=None, help="Vercel'dagi panel manzili (yoki FC_PANEL_URL)")
+    s.add_argument("--allow-origin", action="append", default=None,
+                   help="faqat shu domen(lar)dan ruxsat, masalan https://face-control.vercel.app")
     s.set_defaults(fn=cmd_serve)
 
     a = ap.parse_args(argv)

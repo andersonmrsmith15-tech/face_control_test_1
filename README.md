@@ -61,6 +61,40 @@ python -m facecontrol export baza.json
 Kamera va veb-panelni alohida jarayonlarda ham ishlatsa bo'ladi (`run` va `serve` bir bazani birga ishlatadi;
 panelda qilingan birlashtirish/o'chirish 2 soniya ichida ishlayotgan kameraga ham yetib boradi).
 
+## Vercel'dagi panel (internetdan kirish)
+
+Og'ir tanish qismi kompyuteringizda ishlaydi. Vercel'da faqat panel turadi va u kompyuteringizga
+Cloudflare Tunnel orqali ulanadi. Ma'lumotlar (baza, rasmlar) kompyuterdan chiqmaydi.
+
+```
+[Kamera] → [Kompyuter: python -m facecontrol serve --tunnel] ⇄ Cloudflare Tunnel ⇄ [Vercel: panel] ← telefon/brauzer
+```
+
+**1. Panelni Vercel'ga joylash** (bir marta):
+
+```bash
+cd facecontrol/static
+npx vercel login          # bir marta
+npx vercel --prod         # loyiha nomini so'raydi, masalan: face-control
+```
+
+**2. Kompyuterda serverni tunnel bilan ishga tushirish:**
+
+```bash
+python -m facecontrol serve --source 0 --tunnel --panel-url https://face-control.vercel.app
+```
+
+Terminalda tunnel manzili, kirish kaliti va tayyor **panel havolasi** chiqadi. Havolani oching — panel
+manzil va kalitni eslab qoladi. Keyingi safar panelni oddiy ochib, "Server" tugmasi orqali yangi manzilni kiritasiz.
+
+Xavfsizlik:
+- `--tunnel` bilan har ishga tushirishda yangi tasodifiy kalit yaratiladi; doimiy kalit uchun `--token` yoki `FC_TOKEN`.
+- Kalitsiz API, rasmlar va jonli oqim ochilmaydi (401). Havolani faqat ishonchli odamlarga bering.
+- Faqat o'z panelingizdan murojaatga ruxsat: `--allow-origin https://face-control.vercel.app`.
+- Bepul quick tunnel manzili har ishga tushirishda o'zgaradi. Doimiy manzil uchun Cloudflare akkauntida
+  [named tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) yarating.
+- Kompyuter yoki server o'chsa, panel "Serverga ulanib bo'lmadi" deb ko'rsatadi.
+
 ## Qanday ishlaydi
 
 ```

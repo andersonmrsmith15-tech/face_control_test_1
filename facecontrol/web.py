@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import logging
+import secrets
 from contextlib import asynccontextmanager
 import threading
 import time
@@ -10,8 +12,9 @@ from pathlib import Path
 
 import cv2
 import numpy as np
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import HTMLResponse, Response, StreamingResponse
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from .config import Config
@@ -97,7 +100,19 @@ def _decode(data: bytes) -> np.ndarray:
     return img
 
 
-def create_app(cfg: Config, source: str | None = None, source_name: str | None = None) -> FastAPI:
+PROTECTED = ("/api", "/crops", "/stream.mjpg")
+
+
+def _is_local(request: Request) -> bool:
+    """So'rov shu kompyuterning o'zidanmi? Cloudflare tunnel orqali kelgan so'rovlar ham 127.0.0.1 dan
+    keladi, lekin Cloudflare ularga doim `cf-connecting-ip` sarlavhasini qo'shadi — shu bilan farqlaymiz."""
+    host = request.client.host if request.client else ""
+    return host in ("127.0.0.1", "::1", "localhost") and "cf-connecting-ip" not in request.headers \
+        and "x-forwarded-for" not in request.headers
+
+
+def create_app(cfg: Config, source: str | None = None, source_name: str | None = None,
+               token: str | None = None, allow_origins: list[str] | None = None) -> FastAPI:
     db = Database(cfg.db_path, cfg.crops_dir)
     engine = Engine(cfg, db)
     worker: CameraWorker | None = None
@@ -115,9 +130,36 @@ def create_app(cfg: Config, source: str | None = None, source_name: str | None =
     app = FastAPI(title="Face Control", lifespan=lifespan)
     app.mount("/crops", StaticFiles(directory=cfg.crops_dir), name="crops")
 
+    @app.middleware("http")
+    async def auth(request: Request, call_next):
+        """Token berilgan bo'lsa: API, rasmlar va oqim faqat to'g'ri kalit bilan ochiladi.
+        Kalit `Authorization: Bearer ...` sarlavhasida yoki `?token=` parametrida (rasm/oqim uchun)."""
+        if token and request.method != "OPTIONS" and request.url.path.startswith(PROTECTED):
+            given = request.headers.get("authorization", "").removeprefix("Bearer ").strip() \
+                or request.query_params.get("token", "")
+            if not secrets.compare_digest(given.encode(), token.encode()):
+                return JSONResponse({"detail": "Kirish kaliti noto'g'ri yoki berilmagan"}, status_code=401)
+        resp = await call_next(request)
+        if request.url.path.startswith(PROTECTED):
+            resp.headers["Cache-Control"] = "private, no-store" if request.url.path.startswith("/api") \
+                else "private, max-age=3600"
+        return resp
+
+    # CORS: Vercel'dagi panel boshqa domendan murojaat qiladi (eng tashqi qatlam bo'lishi kerak)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=allow_origins or ["*"],
+        allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type"],
+        max_age=600,
+    )
+
     @app.get("/", response_class=HTMLResponse)
-    def index():
-        return (STATIC / "index.html").read_text()
+    def index(request: Request):
+        # panel shu serverning o'zidan ochilgan: API bir xil manzilda. Kalit faqat lokal brauzerga beriladi
+        boot = {"sameOrigin": True, "token": token if (token and _is_local(request)) else None}
+        html = (STATIC / "index.html").read_text()
+        return html.replace("<script>", f"<script>window.FC_BOOT={json.dumps(boot)};</script>\n<script>", 1)
 
     @app.get("/api/stats")
     def stats():
@@ -196,7 +238,7 @@ def create_app(cfg: Config, source: str | None = None, source_name: str | None =
         return {
             "image": "data:image/jpeg;base64," + base64.b64encode(buf).decode(),
             "results": [{"person_id": r.person_id, "name": r.name, "score": round(r.score, 3),
-                         "confidence": round(r.confidence, 1),
+                         "confidence": round(r.confidence, 1), "appearance": r.appearance,
                          "method": r.method, "is_new": r.is_new, "age": r.age, "gender": r.gender}
                         for r in res],
         }

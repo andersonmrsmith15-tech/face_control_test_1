@@ -68,6 +68,13 @@ class Config:
     ipd_mm_female: float = 61.7
     height_interval_s: float = 1.0
 
+    # --- Tashqi ko'rinish: ko'zoynak, soqol, bosh kiyim (CLIP zero-shot) ---
+    detect_appearance: bool = True
+    clip_model: str = "ViT-B-32"
+    clip_pretrained: str = "laion2b_s34b_b79k"
+    appearance_interval_s: float = 0.7     # bitta trekda qanchalik tez-tez tekshiriladi
+    appearance_min_p: float = 0.6          # shundan past ishonchli belgi ko'rsatilmaydi
+
     @property
     def db_path(self) -> Path:
         return self.data_dir / "facecontrol.db"
