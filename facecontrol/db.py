@@ -166,6 +166,21 @@ class Database:
             self.conn.execute("UPDATE persons SET attrs=? WHERE id=?", (json.dumps(cur), pid))
             self.conn.commit()
 
+    def add_height(self, pid: int, cm: float, keep: int = 60) -> float | None:
+        """Bo'y o'lchovini qo'shadi va mediana (chetga chiqqanlarga chidamli) qiymatini qaytaradi."""
+        with self._lock:
+            row = self.conn.execute("SELECT attrs FROM persons WHERE id=?", (pid,)).fetchone()
+            if not row:
+                return None
+            a = json.loads(row[0] or "{}")
+            hs = (a.get("height_samples", []) + [round(float(cm), 1)])[-keep:]
+            a["height_samples"] = hs
+            a["height_cm"] = round(float(np.median(hs)), 1)
+            a["height_n"] = len(hs)
+            self.conn.execute("UPDATE persons SET attrs=? WHERE id=?", (json.dumps(a), pid))
+            self.conn.commit()
+            return a["height_cm"]
+
     def record_observation(
         self,
         pid: int,

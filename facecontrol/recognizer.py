@@ -15,7 +15,7 @@ import numpy as np
 from .config import Config
 from .db import Database
 from .gallery import Gallery
-from .models import BodyDet, BodyEngine, FaceDet, FaceEngine, dominant_colors
+from .models import BodyDet, BodyEngine, FaceDet, FaceEngine, dominant_colors, estimate_height_cm
 
 log = logging.getLogger(__name__)
 
@@ -40,6 +40,8 @@ class TrackState:
     last_attr_ts: float = 0.0
     best_crop_q: float = 0.0
     best_score: float = 0.0
+    last_height_ts: float = 0.0
+    height: float | None = None
     conf: float = 0.0                 # joriy aniqlik foizi (0..100), kadrlar bo'yicha silliqlangan
     cur_method: str = ""
     method: str = ""
@@ -61,6 +63,7 @@ class Result:
     gender: str | None = None
     is_new: bool = False
     confidence: float = 0.0           # aniqlik foizi 0..100
+    height: float | None = None       # taxminiy bo'y, sm
 
 
 class Recognizer:
@@ -77,6 +80,7 @@ class Recognizer:
         self.tracks: dict[str, TrackState] = {}
         self._face_only_seq = 0
         self._names: dict[int, str] = {}
+        self._heights: dict[int, float | None] = {}
         self._names_ts = 0.0
         self._reload_ts = 0.0
 
@@ -162,7 +166,9 @@ class Recognizer:
             return "?"
         now = time.time()
         if now - self._names_ts > 3 or pid not in self._names:
-            self._names = {p["id"]: p["display_name"] for p in self.db.persons()}
+            persons = self.db.persons()
+            self._names = {p["id"]: p["display_name"] for p in persons}
+            self._heights = {p["id"]: p["attrs"].get("height_cm") for p in persons}
             self._names_ts = now
         return self._names.get(pid, f"#{pid}")
 
@@ -418,6 +424,15 @@ class Recognizer:
                 if colors:
                     self.db.update_attrs(P, {"clothes": colors, "clothes_ts": ts})
                 st.last_attr_ts = ts
+        # --- taxminiy bo'y: yuz (masshtab) + to'liq skelet kerak
+        if cfg.estimate_height and face is not None and body is not None and agree and \
+                ts - st.last_height_ts >= cfg.height_interval_s:
+            ipd = cfg.ipd_mm_female if face.gender == 0 else cfg.ipd_mm_male
+            cm = estimate_height_cm(face, body, ipd)
+            if cm is not None:
+                st.last_height_ts = ts
+                st.height = self.db.add_height(P, cm)
+                self._heights[P] = st.height
         st.face_path = face_path or st.face_path
         st.body_path = body_path or st.body_path
 
@@ -467,6 +482,7 @@ class Recognizer:
             name=self.name_of(st.person_id) if st.person_id is not None else "Aniqlanmoqda...",
             score=st.best_score,
             confidence=st.conf,
+            height=(self._heights.get(st.person_id) or st.height) if st.person_id is not None else None,
             method=st.cur_method or st.method,
             body_bbox=None if body is None else body.bbox,
             face_bbox=None if face is None else face.bbox,
@@ -582,7 +598,8 @@ def annotate(img: np.ndarray, results: list[Result]) -> np.ndarray:
             cv2.rectangle(out, (x1, y1), (x2, y2), col, thick)
         anchor = r.face_bbox if r.face_bbox is not None else r.body_bbox
         name = ("YANGI: " if r.is_new else "") + r.name
-        extra = ", ".join(x for x in (r.gender, f"~{r.age:.0f} yosh" if r.age else None) if x)
+        extra = ", ".join(x for x in (r.gender, f"~{r.age:.0f} yosh" if r.age else None,
+                                      f"bo'y ~{r.height:.0f} sm" if r.height else None) if x)
         parts = [] if r.person_id is None else [f"{r.confidence:.0f}%", _METHOD_UZ.get(r.method, r.method)]
         sub = "  ·  ".join(parts + ([extra] if extra else [])) or " "
         labels.append((anchor, name, sub, col[::-1], r))

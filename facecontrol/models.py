@@ -35,6 +35,7 @@ class BodyDet:
     embedding: np.ndarray | None = None
     quality: float = 0.0
     occlusion: float = 0.0
+    keypoints: np.ndarray | None = None   # COCO 17 nuqta: [x, y, ishonch]
     faces: list[FaceDet] = field(default_factory=list)
 
 
@@ -158,7 +159,12 @@ class BodyEngine:
         conf = res.boxes.conf.cpu().numpy()
         ids = res.boxes.id.cpu().numpy().astype(int) if res.boxes.id is not None else [None] * len(xyxy)
         h, w = img.shape[:2]
-        for b, c, t in zip(xyxy, conf, ids):
+        kps_all = None
+        if getattr(res, "keypoints", None) is not None and res.keypoints.xy is not None and len(res.keypoints.xy):
+            kxy = res.keypoints.xy.cpu().numpy()
+            kc = res.keypoints.conf.cpu().numpy() if res.keypoints.conf is not None else np.ones(kxy.shape[:2])
+            kps_all = np.concatenate([kxy, kc[..., None]], axis=-1).astype(np.float32)
+        for k, (b, c, t) in enumerate(zip(xyxy, conf, ids)):
             b = np.clip(b, 0, [w, h, w, h]).astype(np.float32)
             bh, bw = b[3] - b[1], b[2] - b[0]
             # sifat: balandlik, ishonch, kadr chetida kesilmaganligi
@@ -166,7 +172,8 @@ class BodyEngine:
             aspect = bh / max(bw, 1)
             aspect_q = 1.0 if 1.5 <= aspect <= 4.5 else 0.6
             q = float(c) * min(1.0, bh / 256) * edge * aspect_q if bh >= self.cfg.min_body_px else 0.0
-            dets.append(BodyDet(bbox=b, conf=float(c), track_id=None if t is None else int(t), quality=float(q)))
+            dets.append(BodyDet(bbox=b, conf=float(c), track_id=None if t is None else int(t), quality=float(q),
+                                keypoints=None if kps_all is None else kps_all[k]))
         # to'silganlik: ramkaning qancha qismi boshqa odamlar bilan qoplangan
         for i, d in enumerate(dets):
             area = max((d.bbox[2] - d.bbox[0]) * (d.bbox[3] - d.bbox[1]), 1.0)
@@ -241,3 +248,38 @@ def _color_name(h: float, s: float, v: float) -> str:
         if h2 < limit:
             return name if v > 90 or name in ("ko'k", "yashil") else f"to'q {name}"
     return "noma'lum"
+
+
+# COCO skelet nuqtalari indekslari
+_L_EYE, _R_EYE, _L_HIP, _R_HIP, _L_KNEE, _R_KNEE, _L_ANK, _R_ANK = 1, 2, 11, 12, 13, 14, 15, 16
+EYE_TO_VERTEX_MM = 120.0      # ko'z chizig'idan bosh tepasigacha (kattalar o'rtachasi)
+ANKLE_TO_FLOOR_MM = 75.0      # to'piq markazidan yergacha
+
+
+def estimate_height_cm(face: FaceDet, body: BodyDet, ipd_mm: float) -> float | None:
+    """Taxminiy bo'y (sm). Masshtab: ko'z qorachiqlari orasidagi masofa (IPD).
+    Shartlar: yuz deyarli to'g'ri qaragan, to'piqlar, sonlar va tizzalar ko'rinadi, odam tik turibdi.
+    Kamera burchagi va linza buzilishi hisobga olinmaydi — xato odatda ±5–10 sm."""
+    k = body.keypoints
+    if k is None or abs(face.yaw) > 30 or abs(face.pitch) > 25:
+        return None
+    if min(k[_L_ANK, 2], k[_R_ANK, 2]) < 0.5 and max(k[_L_ANK, 2], k[_R_ANK, 2]) < 0.7:
+        return None
+    if max(k[_L_HIP, 2], k[_R_HIP, 2]) < 0.5 or max(k[_L_KNEE, 2], k[_R_KNEE, 2]) < 0.5:
+        return None
+    left_eye, right_eye = face.kps[0], face.kps[1]
+    ipd_px = float(np.linalg.norm(right_eye - left_eye)) / max(np.cos(np.radians(face.yaw)), 0.85)
+    if ipd_px < 12:                        # juda uzoq — o'lchov ishonchsiz
+        return None
+    mm_per_px = ipd_mm / ipd_px
+    eye_y = float((left_eye[1] + right_eye[1]) / 2)
+    ank = [k[i] for i in (_L_ANK, _R_ANK) if k[i, 2] >= 0.5]
+    ankle_y = float(max(a[1] for a in ank))
+    hip_y = float(max(k[_L_HIP, 1], k[_R_HIP, 1]))
+    if not (eye_y < hip_y < ankle_y):      # tik turmagan (o'tirgan/egilgan)
+        return None
+    if (ankle_y - hip_y) < 0.8 * (hip_y - eye_y):   # oyoqlar qisqa ko'rinadi => o'tirgan
+        return None
+    h_mm = (ankle_y - eye_y) * mm_per_px + EYE_TO_VERTEX_MM + ANKLE_TO_FLOOR_MM
+    cm = h_mm / 10
+    return cm if 120 <= cm <= 220 else None

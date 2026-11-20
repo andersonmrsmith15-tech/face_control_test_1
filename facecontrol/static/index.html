@@ -24,14 +24,33 @@ header h1 { font-size: 17px; margin: 0; font-weight: 650; }
 nav { margin-left: auto; display: flex; gap: 4px; }
 nav button { background: none; border: 0; color: var(--muted); padding: 7px 12px; border-radius: 8px; cursor: pointer; font: inherit; }
 nav button.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
-main { padding: 20px; max-width: 1400px; margin: 0 auto; }
+html, body { height: 100%; }
+body { display: flex; flex-direction: column; }
+main { padding: 16px; width: 100%; flex: 1; min-height: 0; }
+main.live-mode { padding: 0; }
 .grid2 { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 20px; }
 @media (max-width: 900px) { .grid2 { grid-template-columns: 1fr; } }
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
 .card h2 { font-size: 14px; margin: 0 0 12px; font-weight: 650; }
-.live img { width: 100%; border-radius: 8px; display: block; background: #000; min-height: 200px; }
+#tab-live { display: grid; grid-template-columns: minmax(0, 1fr) 340px; height: 100%; gap: 0; }
+#tab-live.hidden { display: none; }
+#tab-live .live { position: relative; background: #000; display: flex; align-items: center; justify-content: center; min-height: 0; overflow: hidden; }
+#tab-live .live img { width: 100%; height: 100%; object-fit: contain; display: block; }
+#tab-live .side { border-left: 1px solid var(--line); background: var(--panel); padding: 14px; display: flex; flex-direction: column; min-height: 0; }
+#tab-live .side .feed { flex: 1; max-height: none; }
+.live-bar { position: absolute; top: 12px; left: 12px; right: 12px; display: flex; gap: 8px; align-items: center; pointer-events: none; }
+.live-bar > * { pointer-events: auto; }
+.live-bar .tag { background: rgba(0,0,0,.6); color: #fff; padding: 5px 10px; border-radius: 8px; font-size: 13px; }
+.live-bar .sp { flex: 1; }
+.live-bar button { background: rgba(0,0,0,.6); color: #fff; border: 1px solid rgba(255,255,255,.25); border-radius: 8px; padding: 6px 12px; cursor: pointer; font: inherit; }
+.live-bar button:hover { background: rgba(0,0,0,.8); }
+#tab-live.side-off { grid-template-columns: 1fr; }
+#tab-live.side-off .side { display: none; }
+:fullscreen #tab-live, #tab-live:fullscreen { height: 100vh; }
+@media (max-width: 900px) { #tab-live { grid-template-columns: 1fr; grid-template-rows: 60vh auto; height: auto; } #tab-live .side { border-left: 0; } }
 .muted { color: var(--muted); }
 .feed { display: flex; flex-direction: column; gap: 8px; max-height: 70vh; overflow: auto; }
+.feed .big { font-size: 15px; }
 .feed .row { display: flex; gap: 10px; align-items: center; padding: 6px; border-radius: 8px; cursor: pointer; }
 .feed .row:hover { background: var(--chip); }
 .thumb { width: 44px; height: 44px; border-radius: 8px; object-fit: cover; background: var(--chip); flex: none; }
@@ -86,13 +105,17 @@ th { color: var(--muted); font-weight: 500; }
 </header>
 
 <main>
-  <section id="tab-live" class="grid2">
-    <div class="card live">
-      <h2>Jonli kuzatuv <span class="muted" id="live-status"></span></h2>
+  <section id="tab-live">
+    <div class="live">
       <img id="live-img" alt="">
-      <p class="muted hidden" id="no-live">Jonli manba ulanmagan. Ishga tushirish: <code>python -m facecontrol serve --source 0</code></p>
+      <p class="hidden" id="no-live" style="color:#aaa;padding:20px">Jonli manba ulanmagan. Ishga tushirish: <code>python -m facecontrol serve --source 0</code></p>
+      <div class="live-bar">
+        <span class="tag" id="live-status">…</span><span class="sp"></span>
+        <button id="btn-side" title="Yon panelni yashirish/ko'rsatish">☰ Ro'yxat</button>
+        <button id="btn-fs" title="To'liq ekran (F)">⛶ To'liq ekran</button>
+      </div>
     </div>
-    <div class="card">
+    <div class="side">
       <h2>So'nggi ko'rinishlar</h2>
       <div class="feed" id="feed"></div>
     </div>
@@ -156,6 +179,7 @@ document.querySelectorAll("nav button").forEach(b => b.onclick = () => {
   document.querySelectorAll("nav button").forEach(x => x.classList.toggle("on", x === b));
   tab = b.dataset.tab;
   document.querySelectorAll("main > section").forEach(s => s.classList.toggle("hidden", s.id !== "tab-" + tab));
+  document.querySelector("main").classList.toggle("live-mode", tab === "live");
   refresh();
 });
 
@@ -166,7 +190,7 @@ async function loadStats() {
     <span>24 soatda <b>${s.seen_24h}</b></span><span>Yuz namunalari <b>${s.face_samples}</b></span>
     <span>Tana namunalari <b>${s.body_samples}</b></span>`;
   if (s.live) {
-    $("#live-status").textContent = `· ${s.live.name} · ${s.live.status} · ${s.live.fps} FPS`;
+    $("#live-status").textContent = `● ${s.live.name} · ${s.live.status} · ${s.live.fps} FPS`;
     if (!liveStarted) { $("#live-img").src = "/stream.mjpg"; liveStarted = true; }
   } else { $("#live-img").classList.add("hidden"); $("#no-live").classList.remove("hidden"); }
 }
@@ -188,7 +212,8 @@ async function loadPeople() {
     <div class="info"><div class="nm">${esc(p.display_name)}</div>
     <div class="muted">${ago(p.last_seen)}</div>
     <span class="chip ${p.name ? "" : "unk"}">#${p.id}</span><span class="chip">${p.seen_count}× ko'rildi</span>
-    ${p.gender ? `<span class="chip">${p.gender}${p.age ? ", ~" + Math.round(p.age) : ""}</span>` : ""}</div></div>`).join("")
+    ${p.gender ? `<span class="chip">${p.gender}${p.age ? ", ~" + Math.round(p.age) : ""}</span>` : ""}
+    ${p.attrs.height_cm ? `<span class="chip">~${Math.round(p.attrs.height_cm)} sm</span>` : ""}</div></div>`).join("")
     || `<p class="muted">Bazada hali odam yo'q.</p>`;
 }
 
@@ -208,6 +233,7 @@ async function openPerson(id) {
         <span>Oxirgi marta</span><span>${dt(p.last_seen)} · ${esc(p.last_source || "")}</span>
         <span>Ko'rinishlar</span><span>${p.seen_count}</span>
         <span>Yosh / jins</span><span>${p.age ? "~" + Math.round(p.age) : "-"} / ${p.gender || "-"} ${p.gender_conf ? "(" + Math.round(p.gender_conf*100) + "%)" : ""}</span>
+        <span>Bo'y (taxminiy)</span><span>${p.attrs.height_cm ? "~" + Math.round(p.attrs.height_cm) + " sm (" + p.attrs.height_n + " ta o'lchov)" : "- (to'liq gavda + yuz kerak)"}</span>
         <span>Kiyim (oxirgi)</span><span>${esc(clothes)}</span>
       </div>
     </div>
@@ -274,6 +300,16 @@ $("#enroll").onsubmit = async e => {
     e.target.reset(); loadStats();
   } catch (err) { $("#enroll-msg").textContent = "Xato: " + err.message; }
 };
+
+// --- to'liq ekran
+const liveSec = $("#tab-live");
+$("#btn-fs").onclick = () => document.fullscreenElement ? document.exitFullscreen() : liveSec.requestFullscreen();
+$("#btn-side").onclick = () => liveSec.classList.toggle("side-off");
+document.addEventListener("keydown", e => {
+  if (tab === "live" && (e.key === "f" || e.key === "F") && !e.target.closest("input,textarea")) $("#btn-fs").click();
+});
+document.addEventListener("fullscreenchange", () => $("#btn-fs").textContent = document.fullscreenElement ? "✕ Chiqish" : "⛶ To'liq ekran");
+document.querySelector("main").classList.add("live-mode");
 
 let qTimer; $("#q").oninput = () => { clearTimeout(qTimer); qTimer = setTimeout(loadPeople, 250); };
 $("#only-unk").onchange = loadPeople;

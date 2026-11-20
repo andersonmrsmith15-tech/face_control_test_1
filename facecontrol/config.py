@@ -19,7 +19,7 @@ class Config:
     face_model: str = "buffalo_l"          # InsightFace paketi (SCRFD + ArcFace r50)
     face_det_size: int = 640
     face_providers: list[str] = field(default_factory=list)  # bo'sh = avtomatik (CUDA > CoreML > CPU)
-    body_model: str = "yolo11s.pt"         # odam detektori
+    body_model: str = "yolo11s-pose.pt"    # odam detektori + skelet nuqtalari (bo'y o'lchash uchun)
     body_conf: float = 0.45
     reid_model: str = "osnet_x1_0_msmt17"  # tana qayta-tanish (ReID) modeli
     device: str = "auto"                   # auto | mps | cuda | cpu
@@ -61,6 +61,12 @@ class Config:
     crop_save_interval_s: float = 5.0
     create_body_only_persons: bool = False # yuzi hech ko'rinmagan odamlarni ham ro'yxatga olish
     merge_suggest_sim: float = 0.55        # dublikatlarni aniqlash chegarasi
+
+    # --- Bo'y o'lchash (taxminiy) ---
+    estimate_height: bool = True
+    ipd_mm_male: float = 64.0              # o'rtacha ko'z qorachiqlari orasidagi masofa
+    ipd_mm_female: float = 61.7
+    height_interval_s: float = 1.0
 
     @property
     def db_path(self) -> Path:
