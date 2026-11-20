@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="uz">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Face Control</title>
+<style>
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --text: #16181d; --muted: #6b7280; --line: #e4e7ec;
+  --accent: #2f6fed; --accent-soft: #e8efff; --danger: #d23b3b; --ok: #1e9e5a; --chip: #f0f2f5;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #0f1115; --panel: #171a21; --text: #e7e9ee; --muted: #9aa1ad; --line: #272b35;
+          --accent: #6b9bff; --accent-soft: #1d2740; --danger: #ff6b6b; --ok: #4cd18a; --chip: #222631; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+       background: var(--bg); color: var(--text); }
+header { display: flex; align-items: center; gap: 16px; padding: 14px 20px; border-bottom: 1px solid var(--line);
+         background: var(--panel); position: sticky; top: 0; z-index: 5; flex-wrap: wrap; }
+header h1 { font-size: 17px; margin: 0; font-weight: 650; }
+.stats { display: flex; gap: 18px; color: var(--muted); flex-wrap: wrap; }
+.stats b { color: var(--text); font-variant-numeric: tabular-nums; }
+nav { margin-left: auto; display: flex; gap: 4px; }
+nav button { background: none; border: 0; color: var(--muted); padding: 7px 12px; border-radius: 8px; cursor: pointer; font: inherit; }
+nav button.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+main { padding: 20px; max-width: 1400px; margin: 0 auto; }
+.grid2 { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 20px; }
+@media (max-width: 900px) { .grid2 { grid-template-columns: 1fr; } }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+.card h2 { font-size: 14px; margin: 0 0 12px; font-weight: 650; }
+.live img { width: 100%; border-radius: 8px; display: block; background: #000; min-height: 200px; }
+.muted { color: var(--muted); }
+.feed { display: flex; flex-direction: column; gap: 8px; max-height: 70vh; overflow: auto; }
+.feed .row { display: flex; gap: 10px; align-items: center; padding: 6px; border-radius: 8px; cursor: pointer; }
+.feed .row:hover { background: var(--chip); }
+.thumb { width: 44px; height: 44px; border-radius: 8px; object-fit: cover; background: var(--chip); flex: none; }
+.people { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 14px; }
+.person { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; cursor: pointer; transition: border-color .15s; }
+.person:hover { border-color: var(--accent); }
+.person img { width: 100%; aspect-ratio: 1; object-fit: cover; display: block; background: var(--chip); }
+.person .info { padding: 9px 11px; }
+.person .nm { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chip { display: inline-block; background: var(--chip); border-radius: 6px; padding: 1px 7px; font-size: 12px; color: var(--muted); margin: 2px 4px 0 0; }
+.chip.unk { color: var(--accent); background: var(--accent-soft); }
+input, textarea { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; width: 100%; }
+button.btn { font: inherit; border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 8px; padding: 7px 13px; cursor: pointer; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.danger { color: var(--danger); }
+.toolbar { display: flex; gap: 10px; margin-bottom: 16px; align-items: center; flex-wrap: wrap; }
+.toolbar input { max-width: 320px; }
+dialog { border: 1px solid var(--line); border-radius: 14px; background: var(--panel); color: var(--text); padding: 0;
+         width: min(980px, calc(100vw - 32px)); max-height: calc(100vh - 40px); }
+dialog::backdrop { background: rgba(0,0,0,.45); }
+.dlg-head { display: flex; gap: 16px; padding: 18px; border-bottom: 1px solid var(--line); align-items: flex-start; flex-wrap: wrap; }
+.dlg-head img { width: 120px; height: 120px; object-fit: cover; border-radius: 10px; }
+.dlg-body { padding: 18px; display: grid; gap: 18px; }
+.samples { display: flex; flex-wrap: wrap; gap: 6px; }
+.samples .s { position: relative; }
+.samples img { height: 84px; border-radius: 6px; display: block; background: var(--chip); }
+.samples .s button { position: absolute; top: 2px; right: 2px; border: 0; border-radius: 4px; background: rgba(0,0,0,.6); color: #fff; cursor: pointer; display: none; font-size: 11px; }
+.samples .s:hover button { display: block; }
+table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+td, th { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); font-size: 13px; }
+th { color: var(--muted); font-weight: 500; }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; }
+.kv span:nth-child(odd) { color: var(--muted); }
+.drop { border: 2px dashed var(--line); border-radius: 12px; padding: 26px; text-align: center; color: var(--muted); cursor: pointer; }
+.drop.over { border-color: var(--accent); color: var(--accent); }
+.result img { max-width: 100%; border-radius: 8px; margin-top: 14px; }
+.pair { display: flex; align-items: center; gap: 14px; padding: 10px 0; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.pair img { width: 64px; height: 64px; border-radius: 8px; object-fit: cover; }
+.hidden { display: none !important; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Face Control</h1>
+  <div class="stats" id="stats"></div>
+  <nav>
+    <button data-tab="live" class="on">Jonli</button>
+    <button data-tab="people">Odamlar</button>
+    <button data-tab="upload">Rasm / Ro'yxatga olish</button>
+    <button data-tab="dupes">Dublikatlar</button>
+  </nav>
+</header>
+
+<main>
+  <section id="tab-live" class="grid2">
+    <div class="card live">
+      <h2>Jonli kuzatuv <span class="muted" id="live-status"></span></h2>
+      <img id="live-img" alt="">
+      <p class="muted hidden" id="no-live">Jonli manba ulanmagan. Ishga tushirish: <code>python -m facecontrol serve --source 0</code></p>
+    </div>
+    <div class="card">
+      <h2>So'nggi ko'rinishlar</h2>
+      <div class="feed" id="feed"></div>
+    </div>
+  </section>
+
+  <section id="tab-people" class="hidden">
+    <div class="toolbar">
+      <input id="q" placeholder="Ism yoki ID bo'yicha qidirish...">
+      <label class="muted"><input type="checkbox" id="only-unk" style="width:auto"> faqat noma'lumlar</label>
+    </div>
+    <div class="people" id="people"></div>
+  </section>
+
+  <section id="tab-upload" class="grid2 hidden">
+    <div class="card">
+      <h2>Rasmdan tanish</h2>
+      <div class="drop" id="drop">Rasmni shu yerga tashlang yoki bosib tanlang
+        <input type="file" id="file" accept="image/*" class="hidden"></div>
+      <div class="result" id="result"></div>
+    </div>
+    <div class="card">
+      <h2>Ism bilan ro'yxatga olish</h2>
+      <p class="muted">Bir odamning bir nechta rasmini (turli burchak, yorug'lik) yuklang — aniqlik oshadi.</p>
+      <form id="enroll" style="display:grid;gap:10px">
+        <input name="name" placeholder="Ism Familiya" required>
+        <input type="file" name="files" accept="image/*" multiple required>
+        <button class="btn primary">Ro'yxatga olish</button>
+        <div id="enroll-msg" class="muted"></div>
+      </form>
+    </div>
+  </section>
+
+  <section id="tab-dupes" class="hidden">
+    <div class="card">
+      <h2>Bir odam ikki marta ro'yxatga olingan bo'lishi mumkin</h2>
+      <div id="dupes"></div>
+    </div>
+  </section>
+</main>
+
+<dialog id="dlg"></dialog>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const img = p => p ? `/crops/${p}` : "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E";
+const ago = ts => {
+  if (!ts) return "-";
+  const s = Date.now()/1000 - ts;
+  if (s < 60) return `${Math.floor(s)} soniya oldin`;
+  if (s < 3600) return `${Math.floor(s/60)} daqiqa oldin`;
+  if (s < 86400) return `${Math.floor(s/3600)} soat oldin`;
+  return new Date(ts*1000).toLocaleString();
+};
+const dt = ts => ts ? new Date(ts*1000).toLocaleString() : "-";
+const api = async (url, opt) => { const r = await fetch(url, opt); if (!r.ok) throw new Error((await r.json().catch(()=>({}))).detail || r.statusText); return r.json(); };
+const form = o => { const f = new FormData(); for (const k in o) f.append(k, o[k]); return f; };
+
+let tab = "live";
+document.querySelectorAll("nav button").forEach(b => b.onclick = () => {
+  document.querySelectorAll("nav button").forEach(x => x.classList.toggle("on", x === b));
+  tab = b.dataset.tab;
+  document.querySelectorAll("main > section").forEach(s => s.classList.toggle("hidden", s.id !== "tab-" + tab));
+  refresh();
+});
+
+let liveStarted = false;
+async function loadStats() {
+  const s = await api("/api/stats");
+  $("#stats").innerHTML = `<span>Odamlar <b>${s.persons}</b></span><span>Nomlangan <b>${s.named}</b></span>
+    <span>24 soatda <b>${s.seen_24h}</b></span><span>Yuz namunalari <b>${s.face_samples}</b></span>
+    <span>Tana namunalari <b>${s.body_samples}</b></span>`;
+  if (s.live) {
+    $("#live-status").textContent = `· ${s.live.name} · ${s.live.status} · ${s.live.fps} FPS`;
+    if (!liveStarted) { $("#live-img").src = "/stream.mjpg"; liveStarted = true; }
+  } else { $("#live-img").classList.add("hidden"); $("#no-live").classList.remove("hidden"); }
+}
+
+async function loadFeed() {
+  const rows = await api("/api/sightings?limit=40");
+  $("#feed").innerHTML = rows.map(r => `<div class="row" onclick="openPerson(${r.person_id})">
+     <img class="thumb" src="${img(r.face_path || r.body_path)}" alt="">
+     <div><div><b>${esc(r.name || "Noma'lum #" + r.person_id)}</b> <span class="chip">${esc(r.method)}</span></div>
+     <div class="muted">${ago(r.ts_end)} · ${Math.round(r.ts_end - r.ts_start)}s · ${esc(r.source)}</div></div></div>`).join("")
+     || `<p class="muted">Hali hech kim ko'rinmadi.</p>`;
+}
+
+async function loadPeople() {
+  let rows = await api("/api/persons?q=" + encodeURIComponent($("#q").value));
+  if ($("#only-unk").checked) rows = rows.filter(p => !p.name);
+  $("#people").innerHTML = rows.map(p => `<div class="person" onclick="openPerson(${p.id})">
+    <img src="${img(p.best_face_path || p.last_body_path)}" alt="" loading="lazy">
+    <div class="info"><div class="nm">${esc(p.display_name)}</div>
+    <div class="muted">${ago(p.last_seen)}</div>
+    <span class="chip ${p.name ? "" : "unk"}">#${p.id}</span><span class="chip">${p.seen_count}× ko'rildi</span>
+    ${p.gender ? `<span class="chip">${p.gender}${p.age ? ", ~" + Math.round(p.age) : ""}</span>` : ""}</div></div>`).join("")
+    || `<p class="muted">Bazada hali odam yo'q.</p>`;
+}
+
+async function openPerson(id) {
+  const p = await api("/api/persons/" + id);
+  const clothes = p.attrs.clothes ? `ustki: ${p.attrs.clothes.upper || "-"}, pastki: ${p.attrs.clothes.lower || "-"}` : "-";
+  const d = $("#dlg");
+  d.innerHTML = `<div class="dlg-head">
+    <img src="${img(p.best_face_path || p.last_body_path)}" alt="">
+    <div style="flex:1;min-width:240px;display:grid;gap:8px">
+      <div style="display:flex;gap:8px"><input id="p-name" value="${esc(p.name || "")}" placeholder="Ism kiriting (#${p.id})">
+        <button class="btn primary" id="p-save">Saqlash</button></div>
+      <textarea id="p-notes" rows="2" placeholder="Izoh">${esc(p.notes || "")}</textarea>
+      <div class="kv">
+        <span>ID</span><span>#${p.id}</span>
+        <span>Birinchi marta</span><span>${dt(p.first_seen)}</span>
+        <span>Oxirgi marta</span><span>${dt(p.last_seen)} · ${esc(p.last_source || "")}</span>
+        <span>Ko'rinishlar</span><span>${p.seen_count}</span>
+        <span>Yosh / jins</span><span>${p.age ? "~" + Math.round(p.age) : "-"} / ${p.gender || "-"} ${p.gender_conf ? "(" + Math.round(p.gender_conf*100) + "%)" : ""}</span>
+        <span>Kiyim (oxirgi)</span><span>${esc(clothes)}</span>
+      </div>
+    </div>
+    <div style="display:grid;gap:8px">
+      <button class="btn" onclick="dlg.close()">Yopish</button>
+      <div style="display:flex;gap:6px"><input id="p-merge" placeholder="ID" style="width:70px"><button class="btn" id="p-merge-btn">Shu yerga qo'shish</button></div>
+      <button class="btn danger" id="p-del">O'chirish</button>
+    </div></div>
+  <div class="dlg-body">
+    <div><h2>Yuz namunalari (${p.face_samples.length}) <span class="muted">— har tanishda yangilanadi</span></h2>
+      <div class="samples">${p.face_samples.map(s => `<div class="s"><img src="${img(s.crop_path)}" title="sifat ${s.quality.toFixed(2)}" alt="">
+        <button onclick="delSample('face',${s.id},${p.id})" title="Noto'g'ri namunani o'chirish">✕</button></div>`).join("") || '<span class="muted">-</span>'}</div></div>
+    <div><h2>Tana namunalari (${p.body_samples.length})</h2>
+      <div class="samples">${p.body_samples.filter(s => s.crop_path).map(s => `<div class="s"><img src="${img(s.crop_path)}" alt="">
+        <button onclick="delSample('body',${s.id},${p.id})">✕</button></div>`).join("") || '<span class="muted">-</span>'}</div></div>
+    <div><h2>Ko'rinishlar tarixi</h2>
+      <table><tr><th>Vaqt</th><th>Davomiylik</th><th>Kadr</th><th>Usul</th><th>Ishonch</th><th>Manba</th></tr>
+      ${p.sightings.map(s => `<tr><td>${dt(s.ts_start)}</td><td>${Math.round(s.ts_end - s.ts_start)}s</td><td>${s.frames}</td>
+        <td>${esc(s.method)}</td><td>${(s.score||0).toFixed(2)}</td><td>${esc(s.source)}</td></tr>`).join("")}</table></div>
+  </div>`;
+  d.showModal();
+  $("#p-save").onclick = async () => { await api(`/api/persons/${id}/rename`, {method: "POST", body: form({name: $("#p-name").value, notes: $("#p-notes").value})}); d.close(); refresh(); };
+  $("#p-del").onclick = async () => { if (confirm("Bu odam va uning barcha ma'lumotlari o'chirilsinmi?")) { await api(`/api/persons/${id}`, {method: "DELETE"}); d.close(); refresh(); } };
+  $("#p-merge-btn").onclick = async () => { const o = $("#p-merge").value; if (!o) return;
+    try { await api(`/api/persons/${id}/merge`, {method: "POST", body: form({other: o})}); openPerson(id); refresh(); } catch (e) { alert(e.message); } };
+}
+const dlg = $("#dlg");
+async function delSample(kind, sid, pid) { await api(`/api/samples/${kind}/${sid}`, {method: "DELETE"}); openPerson(pid); }
+
+async function loadDupes() {
+  const rows = await api("/api/suggestions");
+  $("#dupes").innerHTML = rows.map(r => `<div class="pair">
+    <img src="${img(r.a.best_face_path)}" alt=""><div><b>${esc(r.a.display_name)}</b><div class="muted">#${r.a.id}</div></div>
+    <span class="chip">o'xshashlik ${r.sim}</span>
+    <img src="${img(r.b.best_face_path)}" alt=""><div><b>${esc(r.b.display_name)}</b><div class="muted">#${r.b.id}</div></div>
+    <button class="btn primary" onclick="mergePair(${r.a.name || !r.b.name ? r.a.id : r.b.id}, ${r.a.name || !r.b.name ? r.b.id : r.a.id})">Birlashtirish</button>
+  </div>`).join("") || `<p class="muted">Dublikat topilmadi.</p>`;
+}
+async function mergePair(keep, drop) { await api(`/api/persons/${keep}/merge`, {method: "POST", body: form({other: drop})}); refresh(); }
+
+// --- rasm yuklash
+const drop = $("#drop"), file = $("#file");
+drop.onclick = () => file.click();
+drop.ondragover = e => { e.preventDefault(); drop.classList.add("over"); };
+drop.ondragleave = () => drop.classList.remove("over");
+drop.ondrop = e => { e.preventDefault(); drop.classList.remove("over"); if (e.dataTransfer.files[0]) recognize(e.dataTransfer.files[0]); };
+file.onchange = () => file.files[0] && recognize(file.files[0]);
+async function recognize(f) {
+  $("#result").innerHTML = `<p class="muted">Tahlil qilinmoqda...</p>`;
+  try {
+    const r = await api("/api/recognize", {method: "POST", body: form({file: f})});
+    $("#result").innerHTML = `<img src="${r.image}" alt=""><div style="margin-top:10px">${r.results.map(x => x.person_id
+      ? `<span class="chip" style="cursor:pointer" onclick="openPerson(${x.person_id})">${x.is_new ? "YANGI · " : ""}${esc(x.name)} — ${Math.round(x.confidence)}%</span>`
+      : `<span class="chip">aniqlanmadi</span>`).join("")}</div>`;
+    loadStats();
+  } catch (e) { $("#result").innerHTML = `<p style="color:var(--danger)">${esc(e.message)}</p>`; }
+}
+$("#enroll").onsubmit = async e => {
+  e.preventDefault();
+  $("#enroll-msg").textContent = "Ishlanmoqda...";
+  try {
+    const r = await api("/api/enroll", {method: "POST", body: new FormData(e.target)});
+    $("#enroll-msg").textContent = `Tayyor: #${r.person_id}, ${r.accepted}/${r.total} rasm qabul qilindi.`;
+    e.target.reset(); loadStats();
+  } catch (err) { $("#enroll-msg").textContent = "Xato: " + err.message; }
+};
+
+let qTimer; $("#q").oninput = () => { clearTimeout(qTimer); qTimer = setTimeout(loadPeople, 250); };
+$("#only-unk").onchange = loadPeople;
+
+function refresh() {
+  loadStats().catch(() => {});
+  if (tab === "live") loadFeed().catch(() => {});
+  if (tab === "people") loadPeople().catch(() => {});
+  if (tab === "dupes") loadDupes().catch(() => {});
+}
+refresh();
+setInterval(() => { if (!dlg.open && tab !== "upload") refresh(); else loadStats().catch(() => {}); }, 3000);
+</script>
+</body>
+</html>

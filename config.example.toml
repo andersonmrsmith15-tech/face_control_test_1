@@ -1,0 +1,20 @@
+# Nusxa oling:  cp config.example.toml config.toml   — va kerakli qiymatlarni o'zgartiring.
+# Barcha kalitlar va standart qiymatlar: facecontrol/config.py
+
+# data_dir = "data"                 # baza va rasmlar
+# device = "auto"                   # auto | mps | cuda | cpu
+# body_model = "yolo11s.pt"         # aniqroq: yolo11m.pt, tezroq: yolo11n.pt
+
+# Yuz bo'yicha moslash (ko'tarsangiz — kamroq xato tanish, lekin ko'proq "aniqlanmagan")
+# face_match = 0.45
+# face_new = 0.30
+
+# Yangi odam yaratish uchun yuz sifati va videodagi kadrlar soni
+# min_quality_enroll = 0.45
+# new_person_min_frames = 3
+
+# Tana (kiyim) namunalari necha soat amal qiladi
+# body_ttl_hours = 12.0
+
+# Yuzi umuman ko'rinmagan odamlarni ham ro'yxatga olish
+# create_body_only_persons = false

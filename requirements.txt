@@ -1,0 +1,12 @@
+numpy
+opencv-python
+onnxruntime
+insightface
+ultralytics
+lap>=0.5.12
+boxmot
+torch
+torchvision
+fastapi
+uvicorn[standard]
+python-multipart
